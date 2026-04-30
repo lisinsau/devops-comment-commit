@@ -1,4 +1,4 @@
-name: Générer Image et Déployer
+name: Ajouter Commentaire Automatique
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  
+
 jobs:
   generation-image:
     runs-on: ubuntu-latest
