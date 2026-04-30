@@ -1,105 +1,40 @@
 name: Ajouter Commentaire Automatique
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+   workflow_run:
+    workflows: ["Générer Image et Déployer"]
+    types:
+      - completed
 
 permissions:
   contents: write
-  pull-requests: write
-  issues: write
 
 jobs:
-  generation-image:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Cloner le dépôt
-        uses: actions/checkout@v4
-
-      - name: Récupérer le message du commit
-        run: |
-          MSG=$(git log -1 --pretty=%B | head -1)
-          echo "MESSAGE=$MSG" >> $GITHUB_ENV
-
-      - name: Appel API DynaPictures
-        run: |
-          curl -s -X POST "https://api.dynapictures.com/designs/3edd293aad" \
-            -H "Authorization: Bearer ${{ secrets.DYNAPICTURES_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"params\": [{\"name\": \"text1\", \"text\": \"$MESSAGE\"}]}" \
-            -o response.json
-
-      - name: Télécharger l'image générée
-        run: |
-          URL=$(jq -r '.imageUrl' response.json)
-          mkdir -p images
-          curl -s -o "images/image-$(date +%s).png" "$URL"
-
-      - name: Sauvegarder l'image en artefact
-        uses: actions/upload-artifact@v4
-        with:
-          name: images-generees
-          path: images/
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: generation-image
-    permissions:
-      contents: write
-    steps:
-      - name: Cloner gh-pages (images existantes)
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-        continue-on-error: true
-
-      - name: Préparer le dossier images
-        run: mkdir -p images
-      
-      - name: Télécharger l'artefact
-        uses: actions/download-artifact@v4
-        with:
-          name: images-generees
-          path: images/
-
-      - name: Générer index.html
-        run: |
-          echo "<html><body><h1>Images générées</h1>" > index.html
-          for img in images/*.png; do
-            filename=$(basename "$img")
-            echo "<div><img src='images/$filename' width='300'><p>$filename</p></div>" >> index.html
-          done
-          echo "</body></html>" >> index.html
-
-      - name: Déployer sur GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
-          keep_files: true
-
   comment-commit:
     runs-on: ubuntu-latest
-    needs: deploy
     steps:
-      - name: Cloner le dépôt
-        uses: actions/checkout@v4
-
       - name: Télécharger l'artefact
         uses: actions/download-artifact@v4
         with:
           name: images-generees
           path: ./artifacts/
 
-      - name: Récupérer le nom de l'image et le message
+      - name: Récupérer le nom de l'image
         run: |
-          MSG=$(git log -1 --pretty=%B | head -1)
-          IMAGE_NAME=$(ls ./artifacts/ | head -n 1)
-          echo "MESSAGE=$MSG" >> $GITHUB_ENV
-          echo "IMAGE_URL=https://lisinsau.github.io/devops-comment-commit/images/$IMAGE_NAME" >> $GITHUB_ENV
+          IMAGE_PATH=$(find ./artifacts -name "*.png" | head -n 1)
+          IMAGE_NAME=$(basename "$IMAGE_PATH")
 
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+
+      - name: Construire l'URL de l'image
+        run: |
+          IMAGE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/images/${IMAGE_NAME}"
+          echo "IMAGE_URL=$IMAGE_URL" >> $GITHUB_ENV
+
+      - name: Récupérer le message du commit
+        run: |
+          echo "MESSAGE=${{ github.event.workflow_run.head_commit.message }}" >> $GITHUB_ENV
+      
       - name: Ajouter un commentaire sur le commit
         uses: actions/github-script@v6
         with:
@@ -107,11 +42,18 @@ jobs:
           script: |
             const message = process.env.MESSAGE;
             const imageUrl = process.env.IMAGE_URL;
-            const body = `### ✅ Image Générée avec succès !\n\n**Message du commit :** ${message}\n\n![Image Générée](${imageUrl})`;
-            
+
+            const body = `### 🎨 Image générée automatiquement
+
+                        **Message du commit :**
+                        ${message}
+
+                        ![Image Générée](${imageUrl})
+                        `;
+
             github.rest.repos.createCommitComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              commit_sha: context.sha,
+              commit_sha: context.payload.workflow_run.head_sha,
               body: body
             });
