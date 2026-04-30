@@ -20,7 +20,7 @@ jobs:
 
       - name: Appel API DynaPictures
         run: |
-          curl -s -X POST "https://api.dynapictures.com/designs/87ce71f347" \
+          curl -s -X POST "https://api.dynapictures.com/designs/3edd293aad" \
             -H "Authorization: Bearer ${{ secrets.DYNAPICTURES_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "{\"params\": [{\"name\": \"text1\", \"text\": \"$MESSAGE\"}]}" \
